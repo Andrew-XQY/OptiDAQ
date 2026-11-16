@@ -1,0 +1,223 @@
+{
+  "run": {
+    "_comment": "Run name, output folders and free-disk margin.",
+    "data_root": "/path/to/data_root",
+    "description": "Evenly spaced motor grid over X +/-5500 and Y +/-15000 counts about the saved reference; one fresh Line1 camera pair per point",
+    "free_disk_margin": 2.0,
+    "name": "lab_motor_raster",
+    "runs_subdir": "runs/lab_motor"
+  },
+  "rbac": {
+    "_comment": "CERN authentication.",
+    "enabled": true
+  },
+  "output": {
+    "_comment": "Lab PNG storage; raw16 keeps native counts before the configured crop/bin transforms.",
+    "format": "png",
+    "png": {
+      "_comment": "Lossless 256x256 uint16 images using existing crop/bin transforms; pairing is taken from committed capture IDs.",
+      "mode": "raw16",
+      "compress_level": 1,
+      "transforms": {
+        "cam1": [
+          {
+            "name": "crop_box",
+            "params": {
+              "x1": 96,
+              "y1": 96,
+              "x2": 1120,
+              "y2": 1120
+            }
+          },
+          {
+            "name": "avg_bin",
+            "params": {
+              "factor": 4,
+              "dtype": "uint16"
+            }
+          }
+        ],
+        "cam2": [
+          {
+            "name": "crop_box",
+            "params": {
+              "x1": 335,
+              "y1": 345,
+              "x2": 847,
+              "y2": 857
+            }
+          },
+          {
+            "name": "avg_bin",
+            "params": {
+              "factor": 2,
+              "dtype": "uint16"
+            }
+          }
+        ]
+      },
+      "metadata_hooks": [
+        "stats",
+        "centroid",
+        "crop_energy"
+      ],
+      "pairing": "capture_id"
+    }
+  },
+  "postprocess": {
+    "_comment": "Capture-ID database finalization is mandatory. Existing data_analysis action is DMD-specific.",
+    "actions": []
+  },
+  "background": {
+    "_comment": "Camera-only background capture count, timeout and output folder.",
+    "n_images": 5,
+    "timeout_s": 120.0,
+    "runs_subdir": "background"
+  },
+  "writer": {
+    "_comment": "Apply camera settings once before listening. Capture queues and per-pair durability are controlled by the lab coordinator.",
+    "configure_cameras": true,
+    "drain_timeout_s": 30.0,
+    "fsync_every_records": 20,
+    "queue_maxsize": 64,
+    "segment_max_bytes": 536870912
+  },
+  "_cameras_comment": "Active camera aliases, configured below in camera_setting.",
+  "cameras": [
+    "cam1",
+    "cam2"
+  ],
+  "camera_setting": {
+    "_comment": "Laser reference check 2026-11-12: round integer exposures cam1 200ms / cam2 2ms, gain0, DMD off. Worst native maxima3449/3057 over three fresh pairs, zero saturation. Preserve live ROI (360,0,1216,1216). Matched-exposure backgrounds and per-camera DN/s normalization required for cross-source comparison; full-range safety still unverified. ROI config offsetX/offsetY are center coordinates968/608; FESA top-left remains360/0 with size1216x1216.",
+    "cam1": {
+      "device": "CAMERA_DEVICE_1",
+      "acqTrigger": 2,
+      "cameraBinningMode": 0,
+      "cameraBinningHor": 1,
+      "cameraBinningVer": 1,
+      "cameraExposureAuto": 1,
+      "cameraExposureTimeUs": 200000,
+      "cameraFrameRate": 20.0,
+      "cameraGain": 0.0,
+      "cameraGainAuto": 1,
+      "cameraGammaEnable": false,
+      "cameraPixelFormat": "mono12",
+      "cameraTriggerDelay": 0.0,
+      "roi_enabled": true,
+      "roi": {
+        "height": 1216,
+        "width": 1216,
+        "offsetX": 968,
+        "offsetY": 608
+      }
+    },
+    "cam2": {
+      "device": "CAMERA_DEVICE_2",
+      "acqTrigger": 2,
+      "cameraBinningMode": 0,
+      "cameraBinningHor": 1,
+      "cameraBinningVer": 1,
+      "cameraExposureAuto": 1,
+      "cameraExposureTimeUs": 2000,
+      "cameraFrameRate": 20.0,
+      "cameraGain": 0.0,
+      "cameraGainAuto": 1,
+      "cameraGammaEnable": false,
+      "cameraPixelFormat": "mono12",
+      "cameraTriggerDelay": 0.0,
+      "roi_enabled": true,
+      "roi": {
+        "height": 1216,
+        "width": 1216,
+        "offsetX": 968,
+        "offsetY": 608
+      }
+    }
+  },
+  "tap": {
+    "_comment": "FESA capture mode, timing selectors and image-read checks.",
+    "mode": "subscribe",
+    "get_selector": "SPS.USER.ALL",
+    "subscribe_selector": "SPS.USER.ALL",
+    "min_ns_epoch": 100000000000000000,
+    "last_image_poll_s": 0.02,
+    "settle_poll_s": 0.005,
+    "settle_timeout_s": 0.05,
+    "max_trailing_zero_rows": 0,
+    "stamp_fields": [
+      "acqStamp",
+      "imageTimeStamp",
+      "acqTimeStamp"
+    ]
+  },
+  "sync": {
+    "_comment": "Camera pairing source priority and allowed timestamp span/drift (nanoseconds).",
+    "mode": "strict_best_available",
+    "priority": [
+      "pulse_id",
+      "image_ready_ns",
+      "imageTimeStampRaw",
+      "imageTimeStamp",
+      "cycleStampGlob"
+    ],
+    "allow_timestamp_fallback": true,
+    "forbid_local_clock": true,
+    "require_same_sync_source_all_cameras": true,
+    "max_span_ns_by_source": {
+      "pulse_id": 0,
+      "cycleNbGlob": 0,
+      "cycleStampGlob": 0,
+      "image_ready_ns": 1000000,
+      "imageTimeStampRaw": 50000000,
+      "imageTimeStamp": 300000000
+    },
+    "reject_trailing_zero_rows": false,
+    "max_drift_ns": 5000000
+  },
+  "actuator": {
+    "mode": "motor_raster"
+  },
+  "scan": {
+    "_comment": "Set nx and ny to choose the grid density over the fixed reference-relative rectangle: X -5500..+5500, Y -15000..+15000 raw counts. Both endpoints are included; evenly spaced targets are rounded to integer counts. At 100x100, X steps are 111/112 and Y steps are 303/304 counts.",
+    "nx": 100,
+    "ny": 100,
+    "span_counts": {
+      "x": 11000,
+      "y": 30000
+    },
+    "serpentine": true,
+    "frames_per_point": 1,
+    "point_timeout_s": 15.0,
+    "trigger_hz": 1
+  },
+  "capture": {
+    "_comment": "Software selection from continuous external triggers. Guard is empirically tested; timing proxy does not prove simultaneous exposures.",
+    "guard_s": 2.0,
+    "pair_tolerance_ms": 1.0,
+    "max_frame_age_s": 2.0,
+    "queue_size": 16
+  },
+  "motors": {
+    "_comment": "Scan center is the saved reference, independent of the current live position. Raw controller counters; no homing, motion-parameter writes or reset. Return to LIVE preflight start only after successful collection.",
+    "position_mode": "raw_counter",
+    "reference_counters": {
+      "x": 79912,
+      "y": 19908
+    },
+    "return_to_start": true,
+    "x": {
+      "device": "MOTOR_DEVICE_X",
+      "poll_s": 0.2,
+      "settle_s": 0.3,
+      "timeout_s": 20.0,
+      "tol_counts": 20
+    },
+    "y": {
+      "device": "MOTOR_DEVICE_Y",
+      "poll_s": 0.2,
+      "settle_s": 0.3,
+      "timeout_s": 20.0,
+      "tol_counts": 20
+    }
+  }
+}

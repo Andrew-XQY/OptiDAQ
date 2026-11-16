@@ -1,0 +1,194 @@
+{
+  "run": {
+    "_comment": "Run name, output folders and free-disk margin.",
+    "data_root": "/path/to/data_root",
+    "description": "Beam-time continuous motor or magnet acquisition to raw camera streams",
+    "free_disk_margin": 2.0,
+    "name": "experiment_v1",
+    "runs_subdir": "runs"
+  },
+  "rbac": {
+    "_comment": "CERN authentication.",
+    "enabled": true
+  },
+  "output": {
+    "_comment": "Active beam-time acquisition writes raw camera streams. Use experiment_lab_v1 for online PNG saving.",
+    "format": "raw"
+  },
+  "postprocess": {
+    "_comment": "Optional raw-stream validation and offline camera alignment.",
+    "build_aligned_index": true,
+    "validate_after_scan": false
+  },
+  "background": {
+    "_comment": "Camera-only background capture count, timeout and output folder.",
+    "n_images": 5,
+    "timeout_s": 120.0,
+    "runs_subdir": "background"
+  },
+  "writer": {
+    "_comment": "Camera setup, frame queue, disk flushing and raw segment size.",
+    "configure_cameras": true,
+    "drain_timeout_s": 30.0,
+    "fsync_every_records": 20,
+    "queue_maxsize": 64,
+    "segment_max_bytes": 536870912
+  },
+  "_cameras_comment": "Active camera aliases, configured below in camera_setting.",
+  "cameras": [
+    "cam1",
+    "cam2"
+  ],
+  "camera_setting": {
+    "_comment": "Per-camera devices, exposure (microseconds), gain and hardware ROI.",
+    "cam1": {
+      "device": "CAMERA_DEVICE_1",
+      "acqTrigger": 2,
+      "cameraBinningMode": 0,
+      "cameraBinningHor": 1,
+      "cameraBinningVer": 1,
+      "cameraExposureAuto": 1,
+      "cameraExposureTimeUs": 50000,
+      "cameraFrameRate": 20.0,
+      "cameraGain": 0.5,
+      "cameraGainAuto": 1,
+      "cameraGammaEnable": false,
+      "cameraPixelFormat": "mono12",
+      "cameraTriggerDelay": 0.0,
+      "roi_enabled": true,
+      "roi": {
+        "height": 1216,
+        "width": 1216,
+        "offsetX": 968,
+        "offsetY": 608
+      }
+    },
+    "cam2": {
+      "device": "CAMERA_DEVICE_2",
+      "acqTrigger": 2,
+      "cameraBinningMode": 0,
+      "cameraBinningHor": 1,
+      "cameraBinningVer": 1,
+      "cameraExposureAuto": 1,
+      "cameraExposureTimeUs": 50000,
+      "cameraFrameRate": 20.0,
+      "cameraGain": 0.5,
+      "cameraGainAuto": 1,
+      "cameraGammaEnable": false,
+      "cameraPixelFormat": "mono12",
+      "cameraTriggerDelay": 0.0,
+      "roi_enabled": true,
+      "roi": {
+        "height": 1216,
+        "width": 1216,
+        "offsetX": 968,
+        "offsetY": 608
+      }
+    }
+  },
+  "tap": {
+    "_comment": "FESA capture mode, timing selectors and image-read checks.",
+    "mode": "subscribe",
+    "get_selector": "SPS.USER.SFTPRO2",
+    "subscribe_selector": "SPS.USER.SFTPRO2",
+    "min_ns_epoch": 100000000000000000,
+    "last_image_poll_s": 0.02,
+    "settle_poll_s": 0.005,
+    "settle_timeout_s": 0.05,
+    "max_trailing_zero_rows": 0,
+    "stamp_fields": [
+      "acqStamp",
+      "imageTimeStamp",
+      "acqTimeStamp"
+    ]
+  },
+  "sync": {
+    "_comment": "Camera pairing source priority and allowed timestamp span/drift (nanoseconds).",
+    "mode": "strict_best_available",
+    "priority": [
+      "pulse_id",
+      "image_ready_ns",
+      "imageTimeStampRaw",
+      "imageTimeStamp",
+      "cycleStampGlob"
+    ],
+    "allow_timestamp_fallback": true,
+    "forbid_local_clock": true,
+    "require_same_sync_source_all_cameras": true,
+    "max_span_ns_by_source": {
+      "pulse_id": 0,
+      "cycleNbGlob": 0,
+      "cycleStampGlob": 0,
+      "image_ready_ns": 1000000,
+      "imageTimeStampRaw": 50000000,
+      "imageTimeStamp": 300000000
+    },
+    "reject_trailing_zero_rows": false,
+    "max_drift_ns": 5000000
+  },
+  "actuator": {
+    "_comment": "Beam-time actuator: motor, supported magnet scan, or noop (camera-only).",
+    "mode": "motor"
+  },
+  "motors": {
+    "_comment": "X/Y motor devices, motion settings and position tolerances.",
+    "x": {
+      "device": "MOTOR_DEVICE_X",
+      "enabled": true,
+      "poll_s": 0.2,
+      "settle_s": 0.3,
+      "timeout_s": 20.0,
+      "tol_counts": 5,
+      "speed_low": 500,
+      "speed_high": 500,
+      "acceleration": 1000,
+      "trail": 0
+    },
+    "y": {
+      "device": "MOTOR_DEVICE_Y",
+      "enabled": true,
+      "poll_s": 0.2,
+      "settle_s": 0.3,
+      "timeout_s": 20.0,
+      "tol_counts": 5,
+      "speed_low": 500,
+      "speed_high": 2000,
+      "acceleration": 1000,
+      "trail": 0
+    }
+  },
+  "reference": {
+    "_comment": "Motor reference counters and scan dimensions need bench calibration; automatic reference moves remain disabled.",
+    "name": "screen_center",
+    "tolerance_counts": 5,
+    "x_counter": 79912,
+    "y_counter": 19908
+  },
+  "prepare": {
+    "_comment": "Pre-scan reference movement and starting-position checks.",
+    "move_to_reference": false,
+    "require_reference_position": true
+  },
+  "_end_processes_comment": "Cleanup actions after acquisition; return to the motor reference is disabled.",
+  "end_processes": [
+    {
+      "enabled": false,
+      "type": "move_to_reference"
+    }
+  ],
+  "scan": {
+    "_comment": "Frames per point, trigger rate and waits; motor mode also uses the scan geometry.",
+    "coordinate_units": {
+      "x": "steps",
+      "y": "steps"
+    },
+    "frames_per_point": 10,
+    "height": 12305,
+    "nx": 10,
+    "ny": 80,
+    "pattern": "row_sweep",
+    "point_timeout_s": 60.0,
+    "trigger_hz": 10,
+    "width": 17402
+  }
+}

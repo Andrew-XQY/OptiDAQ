@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "optidaq"
+version = "0.0.0"
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+dmd = ["ALP4lib", "Pillow"]
+analysis = ["Pillow", "matplotlib"]
+# Install with --index-url https://acc-py-repo.cern.ch/repository/vr-py-releases/simple.
+# Public PyPI has unrelated pyda (1.0) and pyrbac (0.4); these minimums exclude them.
+# acc-py builds pyrbac and pyrda3 for Python 3.9, 3.11 and 3.14 only (not 3.12).
+cern = ["pyda>=1.1", "pyda-rda3>=1.1", "pyrbac>=1.5"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

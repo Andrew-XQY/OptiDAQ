@@ -1,0 +1,51 @@
+{
+  "_notes": {
+    "purpose": "Export cropped and average-binned 256x256 uint16 images using the per-camera hooks.",
+    "full_image": "Set crop_enabled=false to preserve full frames without image hooks. Use a separate output directory.",
+    "pixels": "Cropping and average binning produce a derived dataset. Integer binning rounds averaged counts; no normalization is applied.",
+    "out_dir": "Use a distinct output directory for each export variant.",
+    "hooks.image": "cam1: 1024/4; cam2: 512/2; cam3: 1024/4. Coordinates and factors are defined in hooks.image.",
+    "hooks.metadata": "stats and centroid measure stored pixels. crop_energy measures the original frame using the configured camera crop.",
+    "sync_alignment": "sample_id groups frames by the selected timestamp and tolerance. frame_sample_id is the per-camera frame_index + 1."
+  },
+  "run_dir": "/path/to/run_dir",
+  "out_dir": "/path/to/output_dataset",
+  "crop_enabled": true,
+  "run_id": null,
+  "cameras": null,
+  "overwrite": false,
+  "include_part_files": false,
+  "show_progress": true,
+  "sync_alignment": {
+    "source": "image_ready_ns",
+    "tolerance_ns": 50000000
+  },
+  "png": {
+    "compress_level": 1
+  },
+  "hooks": {
+    "image": {
+      "cam1": [
+        { "name": "crop_box", "params": { "x1": 96, "y1": 96, "x2": 1120, "y2": 1120 } },
+        { "name": "avg_bin", "params": { "factor": 4, "dtype": "uint16" } }
+      ],
+      "cam2": [
+        { "name": "crop_box", "params": { "x1": 335, "y1": 345, "x2": 847, "y2": 857 } },
+        { "name": "avg_bin", "params": { "factor": 2, "dtype": "uint16" } }
+      ],
+      "cam3": [
+        { "name": "crop_box", "params": { "x1": 70, "y1": 117, "x2": 1094, "y2": 1141 } },
+        { "name": "avg_bin", "params": { "factor": 4, "dtype": "uint16" } }
+      ]
+    },
+    "metadata": [
+      "stats",
+      "centroid",
+      "crop_energy"
+    ]
+  },
+  "extra_info": {
+    "derived_from": "lossless 1216 PNG master / raw run",
+    "pipeline": "per-camera crop_box(96,96,1120,1120)->avg_bin(4,uint16) [= centered 1024 crop]"
+  }
+}

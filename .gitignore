@@ -1,0 +1,20 @@
+.DS_Store
+CLEAR-2026/
+
+data/*
+!data/.gitkeep
+outputs/*
+!outputs/.gitkeep
+.venv/
+__pycache__/
+*.pyc
+
+/skills/
+.pytest_cache/
+
+# Local configs with site paths and device names. Copy the *.example.json files.
+/configs/experiment_v1.json
+/configs/experiment_lab_v1.json
+/configs/experiment_lab_motor_raster.json
+/configs/experiment_v1.json.bak
+/configs/legacy_devices.json

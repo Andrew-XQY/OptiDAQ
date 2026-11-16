@@ -1,0 +1,276 @@
+{
+  "run": {
+    "_comment": "Run name, output folders and free-disk margin.",
+    "data_root": "/path/to/data_root",
+    "description": "Optical lab DMD or camera-only acquisition with CamTest1 and CamTest2",
+    "free_disk_margin": 2.0,
+    "name": "experiment_lab_v1",
+    "runs_subdir": "runs/lab"
+  },
+  "rbac": {
+    "_comment": "CERN authentication.",
+    "enabled": true
+  },
+  "output": {
+    "_comment": "Lab PNG storage; raw16 keeps native counts before the configured crop/bin transforms.",
+    "format": "png",
+    "png": {
+      "_comment": "256x256 uint16 output matching the Friday example; crop/bin and metadata run per camera.",
+      "mode": "raw16",
+      "compress_level": 1,
+      "transforms": {
+        "cam1": [
+          {
+            "name": "crop_box",
+            "params": {
+              "x1": 96,
+              "y1": 96,
+              "x2": 1120,
+              "y2": 1120
+            }
+          },
+          {
+            "name": "avg_bin",
+            "params": {
+              "factor": 4,
+              "dtype": "uint16"
+            }
+          }
+        ],
+        "cam2": [
+          {
+            "name": "crop_box",
+            "params": {
+              "x1": 335,
+              "y1": 345,
+              "x2": 847,
+              "y2": 857
+            }
+          },
+          {
+            "name": "avg_bin",
+            "params": {
+              "factor": 2,
+              "dtype": "uint16"
+            }
+          }
+        ]
+      },
+      "metadata_hooks": [
+        "stats",
+        "centroid",
+        "crop_energy"
+      ],
+      "sync_alignment": {
+        "_comment": "Dataset pairing by image-ready time; incomplete groups retain sample IDs.",
+        "source": "image_ready_ns",
+        "tolerance_ns": 50000000
+      }
+    }
+  },
+  "postprocess": {
+    "_comment": "After files are closed: build indexes, then run selected actions. Empty actions disables optional analysis; PNG database is built separately.",
+    "build_aligned_index": true,
+    "validate_after_scan": false,
+    "actions": [
+      "data_analysis"
+    ]
+  },
+  "background": {
+    "_comment": "Camera-only background capture count, timeout and output folder.",
+    "n_images": 5,
+    "timeout_s": 120.0,
+    "runs_subdir": "background"
+  },
+  "writer": {
+    "_comment": "Camera setup, frame queue, disk flushing and raw segment size.",
+    "configure_cameras": true,
+    "drain_timeout_s": 30.0,
+    "fsync_every_records": 20,
+    "queue_maxsize": 64,
+    "segment_max_bytes": 536870912
+  },
+  "_cameras_comment": "Active camera aliases, configured below in camera_setting.",
+  "cameras": [
+    "cam1",
+    "cam2"
+  ],
+  "camera_setting": {
+    "_comment": "Per-camera devices, exposure (microseconds), gain and hardware ROI.",
+    "cam1": {
+      "device": "CAMERA_DEVICE_1",
+      "acqTrigger": 2,
+      "cameraBinningMode": 0,
+      "cameraBinningHor": 1,
+      "cameraBinningVer": 1,
+      "cameraExposureAuto": 1,
+      "cameraExposureTimeUs": 50000,
+      "cameraFrameRate": 20.0,
+      "cameraGain": 0.5,
+      "cameraGainAuto": 1,
+      "cameraGammaEnable": false,
+      "cameraPixelFormat": "mono12",
+      "cameraTriggerDelay": 0.0,
+      "roi_enabled": true,
+      "roi": {
+        "height": 1216,
+        "width": 1216,
+        "offsetX": 968,
+        "offsetY": 608
+      }
+    },
+    "cam2": {
+      "device": "CAMERA_DEVICE_2",
+      "acqTrigger": 2,
+      "cameraBinningMode": 0,
+      "cameraBinningHor": 1,
+      "cameraBinningVer": 1,
+      "cameraExposureAuto": 1,
+      "cameraExposureTimeUs": 50000,
+      "cameraFrameRate": 20.0,
+      "cameraGain": 0.5,
+      "cameraGainAuto": 1,
+      "cameraGammaEnable": false,
+      "cameraPixelFormat": "mono12",
+      "cameraTriggerDelay": 0.0,
+      "roi_enabled": true,
+      "roi": {
+        "height": 1216,
+        "width": 1216,
+        "offsetX": 968,
+        "offsetY": 608
+      }
+    }
+  },
+  "tap": {
+    "_comment": "FESA capture mode, timing selectors and image-read checks.",
+    "mode": "subscribe",
+    "get_selector": "SPS.USER.SFTPRO2",
+    "subscribe_selector": "SPS.USER.SFTPRO2",
+    "min_ns_epoch": 100000000000000000,
+    "last_image_poll_s": 0.02,
+    "settle_poll_s": 0.005,
+    "settle_timeout_s": 0.05,
+    "max_trailing_zero_rows": 0,
+    "stamp_fields": [
+      "acqStamp",
+      "imageTimeStamp",
+      "acqTimeStamp"
+    ]
+  },
+  "sync": {
+    "_comment": "Camera pairing source priority and allowed timestamp span/drift (nanoseconds).",
+    "mode": "strict_best_available",
+    "priority": [
+      "pulse_id",
+      "image_ready_ns",
+      "imageTimeStampRaw",
+      "imageTimeStamp",
+      "cycleStampGlob"
+    ],
+    "allow_timestamp_fallback": true,
+    "forbid_local_clock": true,
+    "require_same_sync_source_all_cameras": true,
+    "max_span_ns_by_source": {
+      "pulse_id": 0,
+      "cycleNbGlob": 0,
+      "cycleStampGlob": 0,
+      "image_ready_ns": 1000000,
+      "imageTimeStampRaw": 50000000,
+      "imageTimeStamp": 300000000
+    },
+    "reject_trailing_zero_rows": false,
+    "max_drift_ns": 5000000
+  },
+  "actuator": {
+    "_comment": "Lab source mode: dmd or noop (camera-only). No exposure handshake or point-motor scan yet.",
+    "mode": "dmd",
+    "points": 1
+  },
+  "scan": {
+    "_comment": "Existing saved-frame quota and timing assumptions; cameras capture independently of source changes.",
+    "frames_per_point": 10,
+    "trigger_hz": 10,
+    "point_timeout_s": 60.0
+  },
+  "dmd": {
+    "_comment": "SGM patterns displayed one at a time; count controls pattern steps, not exact paired camera samples.",
+    "count": 10,
+    "seed": 0,
+    "settle_s": 0.1,
+    "save_patterns": true,
+    "device": {
+      "version": "4.3",
+      "lib_dir": "/usr/lib64/",
+      "serial": null,
+      "bit_depth": 8,
+      "picture_time_us": 25000
+    },
+    "streams": [
+      {
+        "name": "dynamic_patterns",
+        "weight": 1.0,
+        "params": {
+          "canvas_size": [
+            256,
+            256
+          ],
+          "num_gaussians": 1,
+          "max_pixel_value": 1.0,
+          "minimum_pixel_threshold": 0.02,
+          "seed": 0,
+          "update": {
+            "std_1": 0.06,
+            "std_2": 0.11,
+            "distribution": "other",
+            "intensity_range": [
+              0.07,
+              0.16
+            ],
+            "center_radius_range": [
+              0.0,
+              0.39
+            ],
+            "aspect_range": [
+              0.7,
+              1.55
+            ],
+            "area_boost_scale": 0.0
+          }
+        },
+        "transforms": [
+          {
+            "name": "to_uint8",
+            "params": {
+              "max_value": 0.16
+            }
+          }
+        ]
+      }
+    ],
+    "display_transforms": [
+      {
+        "name": "upscale",
+        "params": {
+          "factor": 1
+        }
+      },
+      {
+        "name": "fit_center",
+        "params": {
+          "height": null,
+          "width": null
+        }
+      },
+      {
+        "name": "rotate",
+        "params": {
+          "degrees": 45
+        }
+      },
+      {
+        "name": "flip_vertical"
+      }
+    ]
+  }
+}
