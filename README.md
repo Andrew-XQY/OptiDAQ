@@ -1,6 +1,10 @@
-# OptiDAQ
+<div align="center">
+  <img src="docs/assets/logo.png" alt="OptiDAQ logo" width="360">
 
-Scan, capture in sync, export ML-ready data.
+  <h1>OptiDAQ</h1>
+
+  <p>Scan, capture in sync, export ML-ready data.</p>
+</div>
 
 ## Purpose
 
