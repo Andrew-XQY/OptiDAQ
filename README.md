@@ -3,7 +3,7 @@
 
   <h1>OptiDAQ</h1>
 
-  <p>Scan, capture in sync, export ML-ready data.</p>
+  <p>Scan, capture in sync, export datasets.</p>
 </div>
 
 ## Purpose
