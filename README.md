@@ -14,6 +14,12 @@ python -m pip install --no-build-isolation -e .
 
 On the PC driving the ViALUX DMD, install `-e ".[dmd]"` instead to add ALP4lib and Pillow. The SGM generator is bundled and needs only NumPy. Outside an acc-py environment, add the CERN packages with `-e ".[cern]" --index-url https://acc-py-repo.cern.ch/repository/vr-py-releases/simple` on Python 3.9, 3.11 or 3.14; extras combine, for example `-e ".[cern,dmd]"`.
 
+The repository ships example configurations with placeholder paths and device names. Copy them to the working names, which git ignores, and fill in your own values. The scripts and the unit tests read the working names.
+
+```bash
+for f in configs/*.example.json; do cp -n "$f" "${f%.example.json}.json"; done
+```
+
 For the beam-time raw workflow, edit `configs/experiment_v1.json`, including `run.data_root`, camera settings and motor/reference settings. It defaults to the existing continuous motor row sweep; the runner also retains its magnet and camera-only modes. It does not run DMD scans or save PNGs during acquisition.
 
 Start acquisition:
