@@ -8,19 +8,23 @@
 
 ## Purpose
 
-Optics experiments that pair a scanned source with several cameras need three things at once: the scan must run, every camera must record without dropping frames, and each frame must later be traceable to its scan step. OptiDAQ does this for experiments at CERN CLEAR and for the optical lab. It moves the source with motors, magnets or a DMD, records all cameras while the scan runs, and turns the recording into an image dataset with one database file.
+Optics experiments that pair a scanned source with several cameras need three things at once: the scan must run, every camera must keep recording, and each frame must be saved with metadata that links it to its scan step. OptiDAQ does this for experiments at CERN CLEAR and for the optical lab. It moves the source with motors, magnets or a DMD, records all cameras while the scan runs, and turns the recording into an image dataset with one database file.
 
 ## Structure
 
 ![OptiDAQ workflow: control, acquisition, saved run data and offline processing](docs/assets/workflow.svg)
 
+Package paths are relative to `src/optidaq/`.
+
 | Block | What it does | Code |
 | --- | --- | --- |
-| Control | One JSON file describes the run. The runner checks it, then steps the actuator through the scan. | `experiments/`, `src/optidaq/actuators/` |
-| Acquisition | Cameras stream in background threads, independent of the scan. Frames are immutable and carry their timing. | `src/optidaq/daq/` |
-| Saved run | Unmodified frame bytes, timing files and the configuration as applied. The folder describes itself. | `src/optidaq/daq/` |
-| Offline processing | Matches frames across cameras by timestamp, crops and bins, writes PNGs and `dataset.db`. | `src/optidaq/data/`, `parse/` |
-| Hardware adapters | CERN device access and the DMD driver, kept apart from the logic above. | `src/optidaq/extensions/` |
+| Control | One JSON config describes the run. A runner checks it, the devices and the data folder, then steps one actuator through the scan: motor row sweep, magnet list, raster or random walk, DMD patterns (Gaussian or from a PNG folder), or none. | `experiments/experiment_v1.py` (beam time), `experiments/experiment_lab_v1.py` (lab); `daq/`: `engine.py`, `preflight.py`; `actuators/`: `motor_row_sweep.py`, `magnet_current_scan.py`, `magnet_raster_scan.py`, `magnet_random_walk.py`, `dmd_pattern_scan.py`, `noop.py`; `data/pattern_stream.py`, `extensions/sgm.py` |
+| Acquisition | Each camera streams in its own thread, independent of the scan. Frames carry the camera's timing fields and go through a bounded queue to one writer thread. A watchdog flags stalled cameras; magnet currents (optional) and DMD steps are logged alongside. | `daq/`: `contracts.py`, `pipeline.py`, `sync_tools.py`, `watchdog.py`, `magnet_logger.py`, `actuator_events.py` |
+| Saved run | One folder per run: each camera's frames with a timing file, and the configuration as applied. Beam-time runs store the unchanged camera bytes; lab runs store PNGs, cropped and binned while saving when the config sets it. | `daq/`: `run_store.py`, `save_backends.py`, `raw_stream.py`; `data/`: `png_io.py`, `hooks.py`, `transforms.py` |
+| Offline processing | Groups frames across cameras by timestamp and writes `dataset.db`. Raw runs are exported to one PNG folder per camera, optionally cropped and binned; beam-time runs also get stream checks and a cross-camera index. An optional check of lab DMD runs writes a PDF report. | `parse/export_scientific_png.py`; `data/`: `scientific_png_export.py`, `raw_run.py`; `daq/offline_validate.py`; `after_collection.py`; `analysis/`: `analyze_run.py`, `clean_plots.py` |
+| Lab motor raster | Separate lab path: moves to each grid point, checks the motor readback, saves one camera pair per point under a capture ID, and builds `dataset.db` from the committed pairs. | `actuators/motor_point_raster.py`; `daq/`: `lab_motor_run.py`, `lab_capture.py`; `extensions/lab_camera.py`; `data/lab_png_finalize.py` |
+| Hardware adapters | Device access, kept apart from the logic above: CERN devices through PyDA (login, cameras, magnets, motors) and the ViALUX DMD driver. | `extensions/`: `cern_pyda.py`, `vialux_alp.py` |
+| Tools | Stand-alone scripts: camera preview, background frames, exposure probe, manual motor, DMD and filter-wheel control, magnet readout, live quad-scan view, two image plots, and a converter to HDF5 or PNG. | `experiments/`: `camera_preview.py`, `background_acquire.py`, `exposure_probe.py` (with `analysis/exposure_probe.py`), `motor_control.py`, `dmd_control.py`, `filter_wheel_control.py`, `read_magnets.py`, `quad_scan_view.py`, `fiber_coupling_check.py`, `scan_area_validation.py`, `parse_process.py` |
 
 Design rules:
 
