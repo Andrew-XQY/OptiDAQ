@@ -28,8 +28,8 @@ Package paths are relative to `src/optidaq/`.
 
 Design rules:
 
-- Acquisition never alters pixels. All image processing happens offline and can be repeated.
-- Actuators share one contract, so a new scan type is one new file.
+- Raw runs keep the camera bytes, so processing is offline and repeatable; lab PNG runs crop and bin while saving.
+- Each scan type is one actuator class; a new one also needs its mode name in the runner.
 - Storage backends share one interface: raw streams for beam time, PNG for the lab.
 
 ## Minimal example
