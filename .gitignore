@@ -18,3 +18,5 @@ __pycache__/
 /configs/experiment_lab_motor_raster.json
 /configs/experiment_v1.json.bak
 /configs/legacy_devices.json
+/configs/analysis*.json
+!/configs/analysis*.example.json

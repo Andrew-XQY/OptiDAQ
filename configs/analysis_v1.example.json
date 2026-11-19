@@ -1,0 +1,85 @@
+{
+  "_comment": "Analysis config: datasets -> pipeline steps (artefacts) -> figures. Run: python -m optidaq.analysis.pipeline --config configs/analysis_v1.json",
+  "output_dir": "outputs/analysis/example",
+  "cameras": {
+    "_comment": "beam: camera of the screen image. fibre: label -> camera, one fibre or several.",
+    "beam": "cam2",
+    "fibre": {"MMF1": "cam3", "MMF2": "cam1"}
+  },
+
+  "datasets": {
+    "_comment": "One block per dataset under a name of your choice. Keys other than adapter, path and preprocess are options of the adapter (optidaq_db: sync_guard_ns, where, otsu).",
+    "background": {
+      "adapter": "optidaq_db",
+      "path": "/path/to/background_dataset"
+    },
+    "basis": {
+      "adapter": "optidaq_db",
+      "path": "/path/to/laser_scan_dataset",
+      "sync_guard_ns": 1000000,
+      "where": null,
+      "otsu": "cam2.stat_max",
+      "preprocess": [{"name": "subtract_background", "params": {"dataset": "background"}}]
+    },
+    "target": {
+      "adapter": "optidaq_db",
+      "path": "/path/to/beam_dataset",
+      "sync_guard_ns": 1000000,
+      "where": "cam2.roi_energy_fraction >= 0.8",
+      "otsu": "cam2.stat_mean",
+      "preprocess": [{"name": "subtract_background", "params": {"dataset": "background"}}]
+    }
+  },
+
+  "pipeline": {
+    "_comment": "One block per step; module selects the code, the block name is the artefact folder. The same module can run under several names with different parameters.",
+    "forward_fit": {
+      "module": "forward_fit",
+      "basis": "basis",
+      "target": "target",
+      "max_frames": 300,
+      "spots": {
+        "_comment": "select: \"all\", or grid with n cells along the longer image side. reach_px: null takes the grid cell size; with \"all\" give a number.",
+        "half_px": 20,
+        "far_px": 60,
+        "select": {"name": "grid", "params": {"cells": 34}},
+        "reach_px": null
+      },
+      "fits": ["corrected", "decomposed"],
+      "coverage_min": 0.9,
+      "metrics": {"mask_level": 0.02, "lowpass_px": 4.0},
+      "samples": {
+        "_comment": "Frames whose images are saved for figures: listed sample ids, plus the frames at these quantiles of the fibre error.",
+        "ids": [],
+        "quantiles": [0.1, 0.5, 0.9]
+      }
+    }
+  },
+
+  "style": {
+    "_comment": "Look shared by all figures; a figure block can override it in its own style key. rc takes any matplotlib rcParams.",
+    "font": "Arial",
+    "font_size": 8,
+    "cmap": "viridis",
+    "cmap_diff": "RdBu_r",
+    "rc": {}
+  },
+
+  "figures": {
+    "_comment": "One block per figure; figure selects the code, source names the pipeline step whose artefacts are drawn.",
+    "forward_fit_samples": {
+      "figure": "fit_samples",
+      "source": "forward_fit",
+      "fibres": null,
+      "fits": null,
+      "samples": null,
+      "labels": {"corrected": "Corrected", "decomposed": "Decomposed"},
+      "width_in": null,
+      "diff_limit": 0.08,
+      "marks": true,
+      "formats": ["png", "pdf"],
+      "dpi": 400,
+      "style": {}
+    }
+  }
+}

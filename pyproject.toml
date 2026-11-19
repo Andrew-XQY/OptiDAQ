@@ -10,7 +10,7 @@ dependencies = ["numpy"]
 
 [project.optional-dependencies]
 dmd = ["ALP4lib", "Pillow"]
-analysis = ["Pillow", "matplotlib"]
+analysis = ["Pillow", "matplotlib", "scipy"]
 # Install with --index-url https://acc-py-repo.cern.ch/repository/vr-py-releases/simple.
 # Public PyPI has unrelated pyda (1.0) and pyrbac (0.4); these minimums exclude them.
 # acc-py builds pyrbac and pyrda3 for Python 3.9, 3.11 and 3.14 only (not 3.12).

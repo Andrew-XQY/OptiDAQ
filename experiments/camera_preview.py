@@ -1542,28 +1542,33 @@ def png_chunk(kind: bytes, data: bytes) -> bytes:
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
 
 
-def gray_png_bytes(image: np.ndarray) -> bytes:
+def gray_png_bytes(image: np.ndarray, palette: Optional[np.ndarray] = None) -> bytes:
+    """Encode an 8-bit display image as grayscale or with an indexed RGB palette."""
     image = np.ascontiguousarray(image, dtype=np.uint8)
     height, width = image.shape
     rows = [b"\x00" + image[row].tobytes() for row in range(height)]
     raw = b"".join(rows)
-    ihdr = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 0 if palette is None else 3, 0, 0, 0)
     return (
         b"\x89PNG\r\n\x1a\n"
         + png_chunk(b"IHDR", ihdr)
+        + (b"" if palette is None else png_chunk(b"PLTE", palette.tobytes()))
         + png_chunk(b"IDAT", zlib.compress(raw, 1))
         + png_chunk(b"IEND", b"")
     )
 
 
-def image_to_tk_put(image: np.ndarray) -> Any:
+def image_to_tk_put(image: np.ndarray, palette: Optional[np.ndarray] = None) -> Any:
     if tk is None:
         raise RuntimeError("tkinter is unavailable")
     image = np.asarray(image, dtype=np.uint8)
     photo = tk.PhotoImage(width=image.shape[1], height=image.shape[0])
-    palette = ["#%02x%02x%02x" % (i, i, i) for i in range(256)]
+    colors = (
+        ["#%02x%02x%02x" % (i, i, i) for i in range(256)]
+        if palette is None else ["#%02x%02x%02x" % tuple(rgb) for rgb in palette]
+    )
     rows = [
-        "{" + " ".join(palette[int(pixel)] for pixel in row) + "}"
+        "{" + " ".join(colors[int(pixel)] for pixel in row) + "}"
         for row in image
     ]
     photo.put(" ".join(rows))
@@ -1601,22 +1606,24 @@ class TkPreview:
         image: np.ndarray,
         overlays: list[dict[str, Any]],
         title: str,
+        *,
+        palette: Optional[np.ndarray] = None,
     ) -> bool:
         if self.closed:
             return False
 
         if self.use_put:
-            self.photo = image_to_tk_put(image)
+            self.photo = image_to_tk_put(image, palette)
         else:
             try:
-                png = gray_png_bytes(image)
+                png = gray_png_bytes(image, palette)
                 self.photo = tk.PhotoImage(
                     data=base64.b64encode(png).decode("ascii"),
                     format="png",
                 )
             except tk.TclError:
                 self.use_put = True
-                self.photo = image_to_tk_put(image)
+                self.photo = image_to_tk_put(image, palette)
 
         height, width = image.shape
         self.canvas.configure(width=width, height=height)
