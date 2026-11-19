@@ -12,7 +12,7 @@ import pytest
 
 
 def load_runner():
-    path = Path(__file__).resolve().parents[1] / "experiments" / "exposure_probe.py"
+    path = Path(__file__).with_name("exposure_probe.py")
     spec = importlib.util.spec_from_file_location("exposure_probe_runner_test_module", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

@@ -3,7 +3,7 @@
 
 Run from the repository root in the CERN acc-py environment:
 
-    python experiments/read_magnets.py
+    python tests/read_magnets.py
 
 Optional device-name arguments replace the defaults. No settings are written.
 """

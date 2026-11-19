@@ -1,8 +1,8 @@
 """Independent, interactive exposure calibration for a held laser/DMD scene.
 
 Run on the lab PC with an already configured, externally triggered camera pair:
-    python experiments/exposure_probe.py --source laser
-    python experiments/exposure_probe.py --source dmd --dmd-period-us 40000
+    python tests/exposure_probe.py --source laser
+    python tests/exposure_probe.py --source dmd --dmd-period-us 40000
 
 The operator blocks/unblocks the source and holds representative scenes. Only
 camera exposure is temporarily changed. No motor or DMD commands are issued.

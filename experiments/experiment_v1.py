@@ -417,7 +417,7 @@ def maybe_launch_quad_view(
         return None
     cmd = [
         sys.executable,
-        str(REPO_ROOT / "experiments" / "quad_scan_view.py"),
+        str(REPO_ROOT / "tests" / "quad_scan_view.py"),
         "--config", str(config_path),
         "--run", str(run_dir),
     ]

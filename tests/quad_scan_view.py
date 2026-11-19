@@ -6,7 +6,7 @@ matplotlib; the numerical helpers can be imported without a display.
 
 Run with a config that defines quad_scan_view and a completed or active run:
 
-    python experiments/quad_scan_view.py --config configs/experiment_v1.json --run RUN_DIR
+    python tests/quad_scan_view.py --config configs/experiment_v1.json --run RUN_DIR
 
 The fit uses sigma^2(u) = a*u^2 + b*u + c, with u = 1/f and drift length L.
 Pixel size and optics are needed to reconstruct the beam matrix and emittance;

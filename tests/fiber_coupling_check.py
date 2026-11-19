@@ -2,7 +2,7 @@
 
 Run from the repository root:
 
-    python experiments/fiber_coupling_check.py INPUT_DIR OUTPUT_DIR [OUTPUT_DIR2]
+    python tests/fiber_coupling_check.py INPUT_DIR OUTPUT_DIR [OUTPUT_DIR2]
 
 Files are sorted by name and paired by rank, so the folders must already be
 matched. Each output camera gets one pair of scatter plots. NumPy and

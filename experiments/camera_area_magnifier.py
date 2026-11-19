@@ -2,10 +2,11 @@
 
 Run in the CERN acc-py environment from the repository root:
 
-    python experiments/camera_area_magnifier.py --config configs/experiment_v1.json
+    python experiments/camera_area_magnifier.py
 
-The main pane shows the entire incoming frame. Camera settings, including any
-hardware ROI already enabled on the camera, are read-only.
+The main pane shows the entire incoming frame. Exposure and gain changes apply
+temporarily to the selected camera. Reset All, switching cameras, and normal
+exit restore the camera settings changed by this viewer.
 """
 
 from __future__ import annotations
@@ -17,10 +18,33 @@ import math
 from pathlib import Path
 import signal
 import sys
+import time
 
 import numpy as np
 
 import camera_preview as preview
+
+from optidaq.extensions.lab_camera import make_lab_client
+
+
+DEFAULT_CONFIG = {
+    "cameras": {
+        "cam1": "BTVDC_865_BTVDIGITAL_1",
+        "cam2": "BTVDC_865_BTVDIGITAL_2",
+    },
+    "camera_setting": {},
+    "tap": {
+        "mode": "subscribe",
+        "get_selector": "SPS.USER.ALL",
+        "subscribe_selector": "SPS.USER.ALL",
+        "stamp_fields": ("acqStamp", "imageTimeStamp", "acqTimeStamp"),
+        "min_ns_epoch": 100_000_000_000_000_000,
+    },
+    "sync": {},
+}
+EXPOSURE = "cameraExposureTimeUs"
+GAIN = "cameraGain"
+AUTO_FIELDS = {EXPOSURE: "cameraExposureAuto", GAIN: "cameraGainAuto"}
 
 
 # Sampled RGB values from the standard colormaps, expanded to Tk's 256 colors.
@@ -80,6 +104,105 @@ def display_u8(image, full_scale, boost):
     return (np.minimum(normalized * boost, 1) * 255).astype(np.uint8)
 
 
+def acquired_field(key):
+    return "acq" + key[0].upper() + key[1:]
+
+
+def controls_match(readback, values, *, applied):
+    for key, expected in values.items():
+        auto = AUTO_FIELDS.get(key)
+        if applied and auto and values[auto] != preview.CAMERA_AUTO_OFF_VALUE:
+            continue  # Automatic modes choose their own applied exposure or gain.
+        field = acquired_field(key) if applied else key
+        tolerance = preview.GAIN_READBACK_TOLERANCE if key == GAIN else 0
+        if applied and key == EXPOSURE:
+            tolerance = 1
+        try:
+            actual = float(readback[field])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not math.isclose(actual, expected, rel_tol=0, abs_tol=tolerance):
+            return False
+    return True
+
+
+class TemporaryCameraControls:
+    """Save and restore only the fields this viewer changes."""
+
+    def __init__(self):
+        self.writer = None
+        self.device = None
+        self.original = {}
+
+    def write(self, device, values):
+        endpoint = f"{device}/CameraSetting"
+        preview.set_value(self.writer, endpoint, preview.camera_setting_payload(values))
+        deadline = time.monotonic() + preview.CAMERA_READBACK_TIMEOUT_S
+        while True:
+            requested = preview.get_value(self.writer, endpoint)
+            applied = preview.get_value(self.writer, f"{device}/AcquiredParameters")
+            if controls_match(requested, values, applied=False) and controls_match(applied, values, applied=True):
+                return applied
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"{device} did not confirm the requested exposure or gain settings.")
+            time.sleep(preview.CAMERA_READBACK_POLL_S)
+
+    def apply(self, device, changes):
+        if not changes or not changes.keys() <= AUTO_FIELDS.keys():
+            raise ValueError("Supply exposure, gain, or both.")
+        if self.original and self.device != device:
+            raise RuntimeError(f"Restore {self.device} before changing {device}.")
+        if self.writer is None:
+            self.writer = make_lab_client(require_rbac=True)
+
+        requested = preview.get_value(self.writer, f"{device}/CameraSetting")
+        if EXPOSURE in changes:
+            low, high = preview.read_camera_exposure_limits(self.writer, device)
+            if not low <= changes[EXPOSURE] <= high:
+                raise ValueError(f"Exposure must be between {low / 1000:g} and {high / 1000:g} ms.")
+        if GAIN in changes:
+            low = float(requested.get("cameraGain_min", preview.GAIN_MIN))
+            high = float(requested.get("cameraGain_max", preview.GAIN_MAX))
+            if not math.isfinite(low) or not math.isfinite(high) or low > high:
+                raise RuntimeError(f"{device} returned invalid gain limits.")
+            if not low <= changes[GAIN] <= high:
+                raise ValueError(f"Gain must be between {low:g} and {high:g}.")
+
+        values = dict(changes)
+        values.update({AUTO_FIELDS[key]: preview.CAMERA_AUTO_OFF_VALUE for key in changes})
+        try:
+            before = {key: requested[key] for key in values}
+            if not all(math.isfinite(float(value)) for value in before.values()):
+                raise ValueError("non-finite camera setting")
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError(f"Could not save the original settings for {device}.") from error
+
+        saved = self.original.copy()
+        self.device = device
+        for key, value in before.items():
+            self.original.setdefault(key, value)
+        try:
+            return self.write(device, values)
+        except Exception as error:
+            try:
+                self.write(device, before)
+            except Exception as rollback_error:
+                raise RuntimeError(
+                    f"{error} Restoring the previous settings also failed: {rollback_error}"
+                ) from error
+            self.original = saved
+            self.device = device if saved else None
+            raise
+
+    def restore(self):
+        if not self.original:
+            return None
+        applied = self.write(self.device, self.original)
+        self.original.clear()
+        self.device = None
+        return applied
+
+
 class ImagePane:
     def __init__(self, parent):
         self.canvas = preview.tk.Canvas(parent, background="black", highlightthickness=0)
@@ -123,8 +246,12 @@ class CameraAreaMagnifier:
             for tap in preview.build_camera_taps(cfg, self.client, allow_image_number_reset=True)
         }
         self.active_tap = None
-        self.connecting = None
+        self.connected_tap = None
+        self.pending = None
+        self.close_requested = False
         self.latest = None
+        self.camera_controls = TemporaryCameraControls()
+        self.control_text = {}
         self.frame = self.image = None
         self.first_corner = self.selection = None
         self.boost = None
@@ -137,13 +264,16 @@ class CameraAreaMagnifier:
         root.title("OptiDAQ Camera Area Magnifier")
         root.geometry(f"{min(1320, root.winfo_screenwidth() - 48)}x"
                       f"{min(820, root.winfo_screenheight() - 100)}")
-        root.protocol("WM_DELETE_WINDOW", root.quit)
-        root.bind("<Escape>", lambda _: root.quit())
+        root.protocol("WM_DELETE_WINDOW", self.close)
+        root.bind("<Escape>", self.close)
 
         self.alias = tk.StringVar(master=root, value=next(iter(self.taps)))
         self.cmap = tk.StringVar(master=root, value="gray")
         self.boost_text = tk.StringVar(master=root, value="None")
         self.status = tk.StringVar(master=root)
+        self.exposure_ms = tk.StringVar(master=root)
+        self.gain = tk.StringVar(master=root)
+        self.control_inputs = {EXPOSURE: self.exposure_ms, GAIN: self.gain}
         controls = ttk.Frame(root, padding=8)
         controls.pack(fill="x")
         for label, variable, values, change in (
@@ -155,11 +285,28 @@ class CameraAreaMagnifier:
                                 state="readonly", width=9)
             menu.pack(side="left", padx=(0, 14))
             menu.bind("<<ComboboxSelected>>", change)
+            if variable is self.alias:
+                self.camera_menu = menu
         ttk.Label(controls, text="Intensity boost (×)").pack(side="left", padx=(0, 4))
         boost_input = ttk.Entry(controls, textvariable=self.boost_text, width=8)
         boost_input.pack(side="left", padx=(0, 4))
         boost_input.bind("<Return>", self.set_boost)
-        ttk.Button(controls, text="Apply", command=self.set_boost).pack(side="left")
+        ttk.Button(controls, text="Apply Boost", command=self.set_boost).pack(side="left")
+
+        camera_settings = ttk.Frame(root, padding=(8, 0, 8, 8))
+        camera_settings.pack(fill="x")
+        self.camera_widgets = []
+        for field, label in ((EXPOSURE, "Exposure (ms)"), (GAIN, "Gain")):
+            ttk.Label(camera_settings, text=label).pack(side="left", padx=(0, 4))
+            entry = ttk.Entry(camera_settings, textvariable=self.control_inputs[field], width=9)
+            entry.pack(side="left", padx=(0, 10))
+            entry.bind("<Return>", self.apply_camera_settings)
+            self.camera_widgets.append(entry)
+        apply_button = ttk.Button(camera_settings, text="Apply Camera", command=self.apply_camera_settings)
+        apply_button.pack(side="left", padx=(0, 10))
+        self.camera_widgets.append(apply_button)
+        self.reset_button = ttk.Button(camera_settings, text="Reset All", command=self.reset_all)
+        self.reset_button.pack(side="left")
 
         images = ttk.Frame(root, padding=(8, 0, 8, 0))
         images.pack(fill="both", expand=True)
@@ -181,6 +328,7 @@ class CameraAreaMagnifier:
                   padding=(8, 5, 8, 0)).pack(fill="x")
         ttk.Label(root, textvariable=self.status, padding=(8, 0, 8, 5)).pack(fill="x")
         self.executor = ThreadPoolExecutor(max_workers=1)
+        self.update_control_widgets()
 
     def invalidate(self, _event=None):
         self.dirty = True
@@ -201,6 +349,79 @@ class CameraAreaMagnifier:
             self.boost_text.set("None")
         self.invalidate()
 
+    def update_control_widgets(self):
+        busy = self.pending is not None
+        self.camera_menu.configure(state="disabled" if busy else "readonly")
+        self.reset_button.configure(state="disabled" if busy else "normal")
+        for widget in self.camera_widgets:
+            widget.configure(state="normal" if not busy and self.connected_tap is not None else "disabled")
+
+    def request(self, operation, finish, status):
+        self.pending = self.executor.submit(operation), finish
+        self.status.set(status)
+        self.update_control_widgets()
+
+    def show_camera_controls(self, acquired):
+        for key, variable in self.control_inputs.items():
+            try:
+                value = float(acquired[acquired_field(key)])
+            except (KeyError, TypeError, ValueError):
+                value = math.nan
+            if key == EXPOSURE:
+                value /= 1000
+            text = f"{value:g}" if math.isfinite(value) else ""
+            self.control_text[key] = text
+            variable.set(text)
+
+    def apply_camera_settings(self, _event=None):
+        if self.pending is not None or self.connected_tap is None:
+            return
+        changes = {}
+        try:
+            for key, variable in self.control_inputs.items():
+                text = variable.get().strip()
+                if text == self.control_text[key]:
+                    continue
+                value = float(text)
+                if key == EXPOSURE:
+                    microseconds = value * 1000
+                    if not math.isfinite(microseconds) or microseconds < 1:
+                        raise ValueError
+                    value = round(microseconds)
+                elif not math.isfinite(value):
+                    raise ValueError
+                changes[key] = value
+        except ValueError:
+            self.status.set("Enter a positive exposure in ms and a numeric gain.")
+            return
+        if changes:
+            tap = self.connected_tap
+            self.request(lambda: self.camera_controls.apply(tap.fesa_device, changes),
+                         self.camera_settings_applied, f"Applying {tap.device} settings…")
+
+    def camera_settings_applied(self, future):
+        self.show_camera_controls(future.result())
+        self.status.set(f"{self.connected_tap.device} camera settings applied.")
+
+    def reset_all(self):
+        if self.pending is not None:
+            return
+        self.boost = None
+        self.boost_text.set("None")
+        self.cmap.set("gray")
+        self.set_colormap()
+        self.clear_selection()
+        self.request(self.camera_controls.restore, self.reset_finished, "Resetting…")
+
+    def reset_finished(self, future):
+        applied = future.result()
+        if applied is not None:
+            self.show_camera_controls(applied)
+        else:
+            for key, variable in self.control_inputs.items():
+                variable.set(self.control_text.get(key, ""))
+        self.status.set("Reset complete.")
+
     def stop_stream(self):
         tap = self.active_tap
         if tap is not None:
@@ -211,6 +432,7 @@ class CameraAreaMagnifier:
             self.active_tap = None
 
     def connect(self, tap):
+        self.camera_controls.restore()
         self.stop_stream()
         latest = preview.LatestFrames([tap])
         # The preview's dynamic-shape tap initializes its shape and dtype from the seed.
@@ -229,16 +451,29 @@ class CameraAreaMagnifier:
 
         tap.start(latest.emit)
         self.active_tap = tap
-        return latest, full_scale, hardware_roi
+        return tap, latest, full_scale, hardware_roi, acquired
 
     def select_camera(self, _event=None):
+        if self.pending is not None:
+            return
         name = self.alias.get()
-        if self.connecting is not None:
-            self.connecting.cancel()
-        self.latest = self.frame = self.image = None
+        self.request(lambda: self.connect(self.taps[name]), self.camera_connected, f"Connecting to {name}…")
+
+    def camera_connected(self, future):
+        try:
+            tap, self.latest, self.full_scale, self.hardware_roi, acquired = future.result()
+        except Exception:
+            if self.active_tap is not None:
+                self.alias.set(self.active_tap.device)
+            else:
+                self.connected_tap = self.latest = self.frame = self.image = None
+                self.clear_selection()
+                self.show_camera_controls({})
+            raise
+        self.connected_tap = tap
+        self.frame = self.image = None
         self.clear_selection()
-        self.status.set(f"Connecting to {name}…")
-        self.connecting = self.executor.submit(self.connect, self.taps[name])
+        self.show_camera_controls(acquired)
 
     def clear_selection(self):
         self.first_corner = self.selection = None
@@ -249,6 +484,8 @@ class CameraAreaMagnifier:
             self.clear_selection()
 
     def click(self, event):
+        if self.connected_tap is not None and self.connected_tap.device != self.alias.get():
+            return
         if self.selection is not None:
             self.clear_selection()
             return
@@ -297,18 +534,23 @@ class CameraAreaMagnifier:
         self.roi_pane.show(self.image[y1:y2, x1:x2], self.palette, full_scale, self.boost)
 
     def tick(self):
-        name = self.alias.get()
-        tap = self.taps[name]
-        if self.connecting is not None and self.connecting.done():
+        if self.pending is not None and self.pending[0].done():
+            future, finish = self.pending
+            self.pending = None
             try:
-                self.latest, self.full_scale, self.hardware_roi = self.connecting.result()
+                finish(future)
             except Exception as error:
-                self.status.set(f"{name}: {error}")
-            self.connecting = None
+                self.status.set(str(error))
+            self.update_control_widgets()
+            if self.close_requested:
+                self.close()
 
         if self.latest is not None:
+            tap = self.connected_tap
+            name = tap.device
             if tap.error is not None:
-                self.status.set(f"{name}: {tap.error}")
+                if self.pending is None:
+                    self.status.set(f"{name}: {tap.error}")
             else:
                 frame = self.latest.snapshot()[name]["frame"]
                 if frame is not None and frame is not self.frame:
@@ -317,13 +559,24 @@ class CameraAreaMagnifier:
                         self.clear_selection()
                         height, width = image.shape
                         roi_note = "  ·  Hardware ROI active" if self.hardware_roi else ""
-                        self.status.set(f"{name}  ·  {width} × {height} px{roi_note}")
+                        if self.pending is None:
+                            self.status.set(f"{name}  ·  {width} × {height} px{roi_note}")
                     self.frame, self.image = frame, image
                     self.invalidate()
         if self.dirty:
             self.draw()
             self.dirty = False
         self.root.after(REFRESH_MS, self.tick)
+
+    def close(self, _event=None):
+        self.close_requested = self.pending is not None
+        if not self.close_requested:
+            self.request(self.camera_controls.restore, self.finish_close, "Restoring camera settings…")
+
+    def finish_close(self, future):
+        self.close_requested = False
+        future.result()
+        self.root.quit()
 
     def run(self):
         signal.signal(signal.SIGTERM, lambda *_: self.root.quit())
@@ -334,22 +587,28 @@ class CameraAreaMagnifier:
             self.root.mainloop()
         finally:
             self.root.destroy()
-            if self.connecting is not None:
-                self.connecting.cancel()
+            if self.pending is not None:
+                self.pending[0].cancel()
             self.executor.shutdown()
             try:
-                self.stop_stream()
-            except RuntimeError as error:
-                print(error, file=sys.stderr)
+                self.camera_controls.restore()
+            except Exception as error:
+                print(f"Could not restore {self.camera_controls.device}: {error}", file=sys.stderr)
+            finally:
+                try:
+                    self.stop_stream()
+                except RuntimeError as error:
+                    print(error, file=sys.stderr)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--config", type=Path, default=preview.DEFAULT_CONFIG_PATH)
+    parser.add_argument("--config", type=Path, help="Override the built-in CLEAR camera configuration.")
     args = parser.parse_args()
     if preview.tk is None:
         raise RuntimeError("camera_area_magnifier.py requires tkinter for display")
-    CameraAreaMagnifier(preview.load_config(args.config)).run()
+    cfg = DEFAULT_CONFIG if args.config is None else preview.load_config(args.config)
+    CameraAreaMagnifier(cfg).run()
 
 
 if __name__ == "__main__":
